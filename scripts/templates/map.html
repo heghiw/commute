@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Prague historical connections explorer</title>
+  <script src="https://unpkg.com/deck.gl@9.1.14/dist.min.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box}html,body,#map{height:100%;width:100%;margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#101722}
+    .panel{position:absolute;z-index:5;top:16px;left:16px;width:390px;max-height:calc(100% - 32px);overflow:auto;padding:20px;color:#e8eef6;background:#0b1726f2;border:1px solid #33465d;border-radius:14px;box-shadow:0 12px 36px #0008}
+    .eyebrow{font-size:10px;letter-spacing:.17em;color:#67e8f9;text-transform:uppercase}h1{margin:4px 0 8px;font-size:21px;line-height:1.15}.intro,.note,.legend{font-size:12px;color:#aec0d2;line-height:1.45}
+    .metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:15px 0}.metric{background:#142439;padding:10px;border-radius:8px}.metric b{display:block;font-size:19px}.metric span{font-size:10px;color:#9db0c5;text-transform:uppercase}
+    label{display:block;margin:12px 0 5px;font-size:11px;color:#9db0c5;text-transform:uppercase;letter-spacing:.06em}select,input[type=number]{width:100%;padding:8px;color:#fff;background:#142439;border:1px solid #3a526b;border-radius:6px}input[type=range]{width:100%;accent-color:#22d3ee}.row{display:grid;grid-template-columns:1fr 96px;gap:8px;align-items:end}.check{display:flex;gap:8px;align-items:center;margin:12px 0;color:#d8e5f0;font-size:12px;text-transform:none;letter-spacing:normal}.check input{accent-color:#22d3ee}.legend{border-top:1px solid #294057;padding-top:10px;margin-top:14px}.item{border-top:1px solid #263b50;padding:9px 0;font-size:12px;display:grid;grid-template-columns:32px 1fr auto;gap:6px;cursor:pointer}.item:hover{background:#152b43}.item strong{color:#67e8f9}.tag{padding:2px 5px;border-radius:4px;background:#25455e;font-size:10px}.muted{color:#8da5b9}.warning{color:#fecaca}
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<aside class="panel">
+  <div class="eyebrow">Prague · cycling network study</div>
+  <h1>Historical connections explorer</h1>
+  <div class="intro">Explore every historical corridor, including weak, unconnected, crossing-dependent and parallel options. Scores are potential network benefits, not construction approvals.</div>
+  <div class="metrics">
+    <div class="metric"><b id="total"></b><span>historical corridors</span></div>
+    <div class="metric"><b id="roadsCount"></b><span>existing road edges</span></div>
+    <div class="metric"><b id="linked"></b><span>routable in model</span></div>
+    <div class="metric"><b id="shown"></b><span>currently shown</span></div>
+  </div>
+  <label for="category">Connection type</label>
+  <select id="category">
+    <option value="all">All historical corridors</option>
+    <option value="screened_link">Screened missing links</option>
+    <option value="crossing_review">Crossing-dependent opportunities</option>
+    <option value="parallel">Parallel route options · safety unverified</option>
+    <option value="other">Other / low modeled benefit</option>
+    <option value="unconnected">Not connected in model</option>
+  </select>
+  <label for="objective">Sort by modeled benefit</label>
+  <select id="objective"><option value="composite">Composite · 25/25/30/20</option><option value="metro">Metro access</option><option value="train">Train access</option><option value="strategic">Metro + train</option><option value="underserved">Underserved destinations</option><option value="services">Jobs and services</option><option value="length">Historical length</option></select>
+  <div class="row"><div><label for="topn">Top N to show</label><input id="topn" type="range" min="1" max="717" value="20"></div><div><label for="topNumber">Exact N</label><input id="topNumber" type="number" min="1" max="717" value="20"></div></div>
+  <label class="check"><input type="checkbox" id="allButton"> Show all in selected category</label>
+  <label class="check"><input type="checkbox" id="cadastre"> Show ČÚZK cadastral map</label>
+  <label class="check"><input type="checkbox" id="stations" checked> Show metro and train stations</label>
+  <label for="roadOpacity">Existing roads visibility</label><input id="roadOpacity" type="range" min="10" max="100" value="55">
+  <div class="legend">Grey = existing roads · pink dashed = current cycling · yellow/red = scored historical corridor · blue = parallel option · thin grey = unconnected historical corridor · cyan dashed = proximity connector · white dashed = endpoint gap · orange = crossing review · green = metro entrance · blue point = train stop. Cadastral tiles and basemap require internet.</div>
+  <div id="ranking"></div>
+</aside>
+<script>
+const RAW_ROADS=__ROADS_JSON__;
+const HISTORICAL=__CORRIDORS_JSON__;
+const STATIONS=__STATIONS_JSON__;
+const METRICS=__METRICS_JSON__;
+const roads=RAW_ROADS.map((r,i)=>({id:i,start:[r[0],r[1]],end:[r[2],r[3]],cycle:r[4],length:r[5]}));
+const $=id=>document.getElementById(id);
+$('total').textContent=METRICS.corridors.toLocaleString();$('roadsCount').textContent=METRICS.roads.toLocaleString();$('linked').textContent=METRICS.routable.toLocaleString();
+$('topn').max=HISTORICAL.length;$('topNumber').max=HISTORICAL.length;
+function mapStyle(showCadastre){return {version:8,sources:{
+  base:{type:'raster',tiles:['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors © CARTO'},
+  cadastral:{type:'raster',tiles:['https://services.cuzk.gov.cz/wms/local-km-wms.asp?service=WMS&request=GetMap&version=1.1.1&layers=KN_I&styles=&format=image/png&transparent=true&srs=EPSG:3857&bbox={bbox-epsg-3857}&width=256&height=256'],tileSize:256,attribution:'© ČÚZK'}
+},layers:[{id:'base',type:'raster',source:'base'},{id:'cadastral',type:'raster',source:'cadastral',layout:{visibility:showCadastre?'visible':'none'},paint:{'raster-opacity':.8}}]};}
+const view=new deck.DeckGL({container:'map',mapStyle:mapStyle(false),initialViewState:{longitude:14.44,latitude:50.075,zoom:10.8,pitch:35,bearing:-10},controller:true,getTooltip:({object})=>{if(!object)return null;const c=object.corridor||object;if(c.kind==='metro'||c.kind==='train')return {text:`${c.kind==='metro'?'Metro entrance':'Train stop'}: ${c.name}`};if(!c.path)return {text:`${c.cycle?'Current cycling':'Existing road'} · ${c.length} m`};return {html:`<b>Corridor ${c.id}</b><br>${c.status.replaceAll('_',' ')} · Tier ${c.tier}<br>Road connected in model: ${c.routable?'yes':'no'}<br>Historical length: ${c.length} m<br>Parallel-road share: ${(100*c.parallel).toFixed(0)}%<br>Potential route saving: ${c.saved} m<br>Crossing flags: ${c.crossings.length}<br><small>Screening only; connection and safety unverified.</small>`};}});
+function sortValue(c,key){return Number(c[key])||0;}
+function render(){const category=$('category').value,key=$('objective').value;const pool=HISTORICAL.filter(c=>category==='all'||c.status===category).sort((a,b)=>sortValue(b,key)-sortValue(a,key)||a.id-b.id);const n=$('allButton').checked?pool.length:Math.min(pool.length,Math.max(1,Number($('topNumber').value)||1));const selected=pool.slice(0,n);$('shown').textContent=selected.length.toLocaleString();$('topn').max=Math.max(1,pool.length);$('topNumber').max=Math.max(1,pool.length);if(!$('allButton').checked){$('topn').value=Math.min(n,pool.length);$('topNumber').value=Math.min(n,pool.length);}const max=Math.max(1e-12,...selected.map(c=>sortValue(c,key)));const alpha=Math.round(+$('roadOpacity').value*2.3);const gaps=selected.flatMap(c=>c.gaps.map(path=>({path,corridor:c})));const prox=selected.flatMap(c=>c.proximity.map(path=>({path,corridor:c})));const crossings=selected.flatMap(c=>c.crossings.map(position=>({position,corridor:c})));
+  $('ranking').innerHTML=selected.slice(0,100).map((c,i)=>`<div class="item" data-id="${c.id}"><strong>${i+1}</strong><span>Corridor ${c.id} · ${c.length} m<br><span class="muted">${c.status.replaceAll('_',' ')}${c.status==='parallel'?' · safety unverified':''}</span></span><span class="tag">${key==='length'?Math.round(c.length)+' m':(100*sortValue(c,key)/max).toFixed(0)}</span></div>`).join('')+(selected.length>100?`<p class="muted">Showing first 100 names; all ${selected.length} selected corridors are on the map.</p>`:'');
+  $('ranking').querySelectorAll('.item').forEach(el=>el.onclick=()=>{const c=selected.find(x=>x.id===+el.dataset.id);const p=c.path[Math.floor(c.path.length/2)];view.setProps({initialViewState:{longitude:p[0],latitude:p[1],zoom:16,pitch:20,bearing:0,transitionDuration:800}});});
+  view.setProps({layers:[
+    new deck.LineLayer({id:'roads',data:roads.filter(r=>!r.cycle),getSourcePosition:r=>r.start,getTargetPosition:r=>r.end,getColor:[125,140,159,alpha],getWidth:.8,widthUnits:'pixels',pickable:true}),
+    new deck.PathLayer({id:'cycling',data:roads.filter(r=>r.cycle),getPath:r=>[r.start,r.end],getColor:[244,114,182,Math.min(255,alpha+40)],getWidth:1.3,widthUnits:'pixels',getDashArray:[5,4],extensions:[new deck.PathStyleExtension({dash:true})],pickable:true}),
+    new deck.PathLayer({id:'historical',data:selected,getPath:c=>c.path,getColor:c=>{if(c.status==='parallel')return [104,180,255,245];if(c.status==='unconnected')return [150,160,175,220];const f=sortValue(c,key)/max;return [253-33*f,224-186*f,71-33*f,250]},getWidth:c=>c.status==='unconnected'?2:3+4*sortValue(c,key)/max,widthUnits:'pixels',pickable:true}),
+    new deck.PathLayer({id:'proximity',data:prox,getPath:x=>x.path,getColor:[34,211,238,245],getWidth:2,widthUnits:'pixels',getDashArray:[2,2],extensions:[new deck.PathStyleExtension({dash:true})],pickable:true}),
+    new deck.PathLayer({id:'endpoint',data:gaps,getPath:x=>x.path,getColor:[255,255,255,230],getWidth:1.6,widthUnits:'pixels',getDashArray:[3,3],extensions:[new deck.PathStyleExtension({dash:true})],pickable:true}),
+    new deck.ScatterplotLayer({id:'crossings',data:crossings,getPosition:x=>x.position,getRadius:7,radiusUnits:'pixels',getFillColor:[249,115,22,245],pickable:true}),
+    new deck.ScatterplotLayer({id:'stations',data:$('stations').checked?STATIONS:[],getPosition:x=>x.position,getRadius:x=>x.kind==='metro'?4:5,radiusUnits:'pixels',getFillColor:x=>x.kind==='metro'?[74,222,128,230]:[59,130,246,230],pickable:true})
+  ]});}
+$('category').onchange=()=>{const count=HISTORICAL.filter(c=>$('category').value==='all'||c.status===$('category').value).length;$('topNumber').value=Math.min(20,Math.max(1,count));$('allButton').checked=false;render();};
+$('objective').onchange=render;$('topn').oninput=()=>{$('allButton').checked=false;$('topNumber').value=$('topn').value;render();};$('topNumber').oninput=()=>{$('allButton').checked=false;render();};$('allButton').onchange=render;$('roadOpacity').oninput=render;$('stations').onchange=render;$('cadastre').onchange=()=>view.setProps({mapStyle:mapStyle($('cadastre').checked)});
+render();
+</script>
+</body></html>

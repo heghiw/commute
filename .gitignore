@@ -1,0 +1,34 @@
+# Python and notebooks
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.venv/
+venv/
+
+# Bulk source data, generated geospatial layers, and private review work
+data/raw/
+data/processed/
+data/cleaned/
+data/derived/
+data/manual/
+
+# Generated reports: keep only the published artifacts below
+reports/*
+!reports/project_analysis.ipynb
+!reports/prague_graph_interactive.html
+!reports/corridor_screening_summary.csv
+!reports/regional_analysis_summary.csv
+!reports/transit_context_corridors.csv
+
+# Local environment and secrets
+.env
+.env.*
+*.log
+_site/
+
+# Local history and review helpers
+PLAN.md
+scripts/create_project_notebook.py
+scripts/export_corridor_review_html.py
+scripts/export_graph_html.py
