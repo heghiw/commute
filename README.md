@@ -7,7 +7,7 @@ This project tests whether vanished paths could close gaps in Prague's cycling n
 The 1,178 mapped path features form 717 continuous corridors. Of these, 144 have at least two modeled access points to existing roads. The model now scores improved access to metro entrances and train-served stops separately. Four corridors pass the current missing-link screen; twelve more have modeled benefit but require a major-road crossing review. These are research results, not approved construction projects.
 
 - [Analysis notebook](reports/project_analysis.ipynb) — study design, data, graph construction, regional comparisons, sensitivity and results.
-- [Interactive map](reports/prague_graph_interactive.html) — all corridors and the existing road graph. Download the HTML file to open it locally.
+- [Interactive map](https://heghiw.github.io/commute) — all corridors and the existing road graph. Download the HTML file to open it locally.
 - [Corridor screening data](reports/corridor_screening_summary.csv), [city-part summary](reports/regional_analysis_summary.csv) and [transit proximity data](reports/transit_context_corridors.csv).
 
 ## Method
